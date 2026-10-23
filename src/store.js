@@ -24,6 +24,10 @@
 //       pinRefused         a simple marker (no fingerprint: a 4-digit PIN is
 //                          too easy to find back from one), cleared when the
 //                          PIN changes or a command with it succeeds;
+//       pinTag             with it, ONE hex character of a salted SHA-256 of
+//                          the refused PIN: tells a PIN changed while the
+//                          container was stopped (15 times out of 16), far
+//                          too little to find a PIN back;
 //       pausedUntil        the end of a pause after HTTP 429 / 5xx.
 // Never a password, a PIN or a user name in clear.
 // -----------------------------------------------------------------------------
@@ -122,6 +126,7 @@ export const emptyTarget = () => ({
   refusedIdentity: undefined,
   refusedCredentials: undefined,
   pinRefused: false,
+  pinTag: undefined,
   pausedUntil: 0,
 });
 
@@ -154,6 +159,10 @@ export function normalizeMemory(raw, now, maxPause) {
         refusedIdentity: identityOf(own(entry, 'refusedIdentity')),
         refusedCredentials: hash('refusedCredentials'),
         pinRefused: own(entry, 'pinRefused') === true,
+        pinTag:
+          typeof own(entry, 'pinTag') === 'string' && /^[0-9a-f]$/.test(own(entry, 'pinTag'))
+            ? own(entry, 'pinTag')
+            : undefined,
         pausedUntil:
           Number.isFinite(pausedUntil) && pausedUntil > now
             ? Math.min(pausedUntil, now + maxPause)
@@ -185,6 +194,9 @@ export function serializeMemory(memory) {
     }
     if (t.pinRefused) {
       entry.pinRefused = true;
+      if (t.pinTag !== undefined) {
+        entry.pinTag = t.pinTag;
+      }
     }
     if (t.pausedUntil > 0) {
       entry.pausedUntil = t.pausedUntil;

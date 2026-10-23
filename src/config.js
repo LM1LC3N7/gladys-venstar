@@ -8,7 +8,11 @@ import { isIP } from 'node:net';
 import { POLL_INTERVAL } from './constants.js';
 import { safeCredential } from './venstar/digest.js';
 
-/** Defaults, mirrored by the manifest (checked by test/manifest.test.js). */
+/**
+ * Defaults, mirrored by the manifest (checked by test/manifest.test.js),
+ * except for the secret fields (password, pin): the store refuses a default
+ * on them, so an absent value is empty here.
+ */
 export const DEFAULT_CONFIG = {
   address: '',
   use_https: false,

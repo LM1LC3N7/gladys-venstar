@@ -54,7 +54,14 @@
   names the PIN keeps a simple marker in `/data` (no fingerprint: 10^4 tries
   would find a 4-digit PIN back; review 1, M1), cleared when the PIN changes
   or a command with it succeeds: later start/setpoint/fan commands are
-  refused unsent until then; the stop still tries once.
+  refused unsent until then; the stop still tries once. With the marker, ONE
+  hex character of a salted SHA-256 of the refused PIN (`pinTag`): a PIN
+  changed while the container was stopped lifts the marker at the next start
+  (15 times out of 16); about 625 PINs of 10 000 share each value, so it does
+  not give the PIN back (approval, m3).
+- Secret fields (password, PIN) have no `default` in the manifest: the store
+  refuses one ("not allowed for secret fields"); an absent value is empty in
+  the code (`test/manifest.test.js` forbids a default on a secret field).
 - 429 and 5xx: a pause of 1 min to 6 h (Retry-After in seconds, or a date
   compared with the thermostat's own `Date` header), never shorter than the
   interval, kept in `/data`. A 5xx other than 503 on `/query/sensors` or
@@ -85,8 +92,9 @@
   overtaken and the stop is written again (reaffirmed, retried at the next
   reads for 90 s). A start never confirmed before a stop (guard `mode:wake`)
   arms a watch: for 90 s, a read showing the thermostat on writes the stop
-  again (review 1, M4); a newer start written by the user ends any watch or
-  reaffirmation. The stop writes back the setpoint a setpoint command not
+  again (review 1, M4); a newer start the thermostat ACCEPTED ends any watch
+  or reaffirmation set before it (a refused one does not; approval, m2), and
+  turning the commands off ends them at once (approval, m1). The stop writes back the setpoint a setpoint command not
   confirmed yet asked (never refused for it, never undoing it).
 - The option "Allow the commands" turned off applies at once (before the
   configuration queue); a stop checks it too (as gladys-coolmasternet).

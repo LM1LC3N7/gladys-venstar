@@ -94,8 +94,7 @@
         "en": "Kept by Gladys in its database, never shown again; sent only to the thermostat, over its verified HTTPS connection.",
         "fr": "Gardé par Gladys dans sa base, jamais réaffiché ; envoyé seulement au thermostat, sur sa connexion HTTPS vérifiée."
       },
-      "required": false,
-      "default": ""
+      "required": false
     },
     {
       "key": "pin",
@@ -108,8 +107,7 @@
         "en": "Only if the thermostat's screen is locked by a PIN: sent with each command, in clear on your network without HTTPS. Kept by Gladys in its database, never shown again. A PIN refused is not sent again (except by a stop) until you change it.",
         "fr": "Seulement si l'écran du thermostat est verrouillé par un code PIN : envoyé avec chaque commande, en clair sur votre réseau sans HTTPS. Gardé par Gladys dans sa base, jamais réaffiché. Un code refusé n'est plus envoyé (sauf par un arrêt) tant que vous ne le changez pas."
       },
-      "required": false,
-      "default": ""
+      "required": false
     },
     {
       "key": "allow_commands",

@@ -125,6 +125,8 @@ once, the commands other than the stop are refused.
 Everything stays on your network. `/data` keeps the time of the last read,
 the certificate fingerprint, the model and name of the thermostat, the end of
 a pause, a salted fingerprint of a user name and password the thermostat
-refused (cleared at the first success), and a simple marker when a PIN was
-refused (no fingerprint of the PIN: a 4-digit PIN would be easy to find back
-from one). Never the password, the user name or the PIN themselves.
+refused (cleared at the first success), and a marker when a PIN was refused,
+with one hexadecimal character of a salted hash of it: enough to see that the
+PIN was changed while the integration was stopped, far too little to find a
+PIN back (no full fingerprint: a 4-digit PIN would be easy to find back from
+one). Never the password, the user name or the PIN themselves.

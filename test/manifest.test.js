@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DEFAULT_CONFIG } from '../src/config.js';
+import { DEFAULT_CONFIG, normalizeConfig } from '../src/config.js';
 import { ACTIONS, POLL_INTERVAL, SETPOINT_BOUNDS } from '../src/constants.js';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -85,6 +85,11 @@ test('the configuration matches the code; the commands are off by default', () =
   const fields = Object.fromEntries(manifest.config_schema.map((f) => [f.key, f]));
   for (const [key, value] of Object.entries(DEFAULT_CONFIG)) {
     assert.ok(fields[key], `${key} is not in the config_schema`);
+    if (fields[key].type === 'secret') {
+      // The store refuses a default on a secret field: absent means empty in the code.
+      assert.equal(value, '', key);
+      continue;
+    }
     assert.deepEqual(fields[key].default, value, key);
   }
   for (const field of manifest.config_schema.filter((f) => f.default !== undefined)) {
@@ -92,6 +97,14 @@ test('the configuration matches the code; the commands are off by default', () =
   }
   assert.equal(fields.password.type, 'secret');
   assert.equal(fields.pin.type, 'secret');
+  // The store validator: "default: not allowed for secret fields".
+  for (const field of manifest.config_schema.filter((f) => f.type === 'secret')) {
+    assert.ok(!('default' in field), `${field.key}: no default on a secret field`);
+  }
+  const absent = normalizeConfig({ address: '192.168.1.20', use_https: true, username: 'admin' });
+  assert.equal(absent.credentials, undefined);
+  assert.equal(absent.pin, undefined);
+  assert.equal(absent.pinInvalid, false);
   assert.match(fields.password.description.fr, /gardé par Gladys dans sa base, jamais réaffiché/i);
   assert.equal(fields.allow_commands.type, 'boolean');
   assert.equal(fields.allow_commands.default, false);

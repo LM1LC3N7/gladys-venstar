@@ -132,7 +132,9 @@ refusées.
 Tout reste sur votre réseau. `/data` garde l'heure de la dernière lecture,
 l'empreinte du certificat, le modèle et le nom du thermostat, la fin d'une
 pause, une empreinte salée d'un nom d'utilisateur et d'un mot de passe
-refusés par le thermostat (effacée au premier succès), et un simple marqueur
-quand un code PIN a été refusé (pas d'empreinte du code : un code de
-4 caractères numériques se retrouverait trop facilement). Jamais le mot de passe, le nom
+refusés par le thermostat (effacée au premier succès), et un marqueur quand
+un code PIN a été refusé, avec un seul caractère hexadécimal d'une empreinte
+salée du code : assez pour voir que le code a changé pendant l'arrêt de
+l'intégration, bien trop peu pour le retrouver (pas d'empreinte complète : un
+code de 4 caractères numériques se retrouverait trop facilement). Jamais le mot de passe, le nom
 d'utilisateur ni le code PIN eux-mêmes.

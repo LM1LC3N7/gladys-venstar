@@ -34,8 +34,13 @@ the notes of the version's GitHub Release.
   the new challenge; only a refused answer to a fresh challenge counts as
   refused credentials: reads stopped, never retried by themselves (a salted
   fingerprint of the refused pair in `/data`). Any character in the password.
-- A PIN refused is not sent again until it changes (a simple marker in
-  `/data`, no fingerprint); HTTP 429 / 5xx pause every read (1 min to 6 h).
+- A PIN refused is not sent again until it changes, even while the container
+  was stopped (a marker and one hex character of a salted hash in `/data`, no
+  fingerprint); HTTP 429 / 5xx pause every read (1 min to 6 h).
+- The secret fields (password, PIN) have no default in the manifest, as the
+  store requires.
+- The 90 s watch after a stop ends when the commands are turned off, or when
+  the thermostat accepts a newer start.
 - Reads never sooner than the interval (the last attempt kept in `/data`),
   bounded answers, 300 states per minute at most, transport badge, "Test the
   connection" button.

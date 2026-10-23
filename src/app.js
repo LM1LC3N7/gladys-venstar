@@ -173,6 +173,11 @@ export class VenstarApp {
   /** Commands turned off apply at once, before the queue; turning them on waits its turn. */
   disableAtOnce(raw) {
     this.latestAllow = normalizeConfig(raw).allowCommands;
+    if (!this.latestAllow) {
+      // Read only means read only: a stop waiting to be written again (or
+      // watched for 90 s) is given up too.
+      this.reaffirm = undefined;
+    }
     if (!this.latestAllow && this.config.allowCommands) {
       this.config = { ...this.config, allowCommands: false };
       this.logger.info('Venstar commands disabled');
@@ -213,9 +218,15 @@ export class VenstarApp {
       return;
     }
     const memory = this.targetMemory(t);
-    if (this.configLoaded && previousPin !== this.config.pin && memory.pinRefused) {
-      // A new PIN: the marker of the refused one goes.
+    if (
+      memory.pinRefused &&
+      ((this.configLoaded && previousPin !== this.config.pin) ||
+        (memory.pinTag !== undefined && memory.pinTag !== this.pinTag()))
+    ) {
+      // A new PIN (changed here, or while the container was stopped): the
+      // marker of the refused one goes.
       memory.pinRefused = false;
+      memory.pinTag = undefined;
       await this.saveMemory();
     }
     this.configLoaded = true;
@@ -305,6 +316,7 @@ export class VenstarApp {
     if (memory?.pinRefused && this.config.pin !== previous.pin) {
       // A new PIN: the marker of the refused one goes.
       memory.pinRefused = false;
+      memory.pinTag = undefined;
       await this.saveMemory();
     }
     await this.publishAll(this.generation);
@@ -352,6 +364,15 @@ export class VenstarApp {
     return Boolean(
       memory?.refusedCredentials && memory.refusedCredentials === this.credentialsHash(),
     );
+  }
+
+  /**
+   * One hex character of a salted SHA-256 of the PIN: enough to see, after a
+   * restart, that the PIN changed (15 times out of 16), far too little to find
+   * a PIN back (about 625 candidates of 10 000 share each value).
+   */
+  pinTag() {
+    return secretHash(this.memory.salt, 'pin', this.config.pin ?? '').slice(0, 1);
   }
 
   pinRefused(t = this.thermostat) {
@@ -1254,6 +1275,11 @@ export class VenstarApp {
         throw this.refusal(ERRORS.refused);
       }
       await this.pinAccepted(t);
+      // A newer start the thermostat accepted (never one it refused): a stop
+      // waiting to be written again, or watched, from before it gives way.
+      if (this.reaffirm && entry.sentSeq !== undefined && this.reaffirm.since < entry.sentSeq) {
+        this.reaffirm = undefined;
+      }
       if (this.supersededBy(entry)) {
         throw this.refusal(ERRORS.superseded);
       }
@@ -1299,8 +1325,6 @@ export class VenstarApp {
     // Only a request that really leaves counts as written (lot 13).
     this.writeSeq += 1;
     entry.sentSeq = this.writeSeq;
-    // A newer start of the user: a stop waiting to be written again gives way.
-    this.reaffirm = undefined;
   }
 
   /**
@@ -1327,6 +1351,7 @@ export class VenstarApp {
   async keepPinRefused(t) {
     const memory = this.targetMemory(t);
     memory.pinRefused = true;
+    memory.pinTag = this.pinTag();
     await this.saveMemory();
     this.logger.warn('Venstar: the PIN was refused; commands refused until it changes');
     await this.updateStatus(this.generation);
@@ -1337,6 +1362,7 @@ export class VenstarApp {
     const memory = this.memory.targets.get(t.target);
     if (this.config.pin && memory?.pinRefused) {
       memory.pinRefused = false;
+      memory.pinTag = undefined;
       await this.saveMemory();
     }
   }
@@ -1587,7 +1613,12 @@ export class VenstarApp {
       }
       await this.pinAccepted(t);
       if (wakePending && !internal) {
-        this.reaffirm = { until: this.now() + TIMINGS.reaffirm, running: false, watch: true };
+        this.reaffirm = {
+          until: this.now() + TIMINGS.reaffirm,
+          running: false,
+          watch: true,
+          since: this.writeSeq,
+        };
       }
       let back;
       try {
@@ -1620,7 +1651,7 @@ export class VenstarApp {
 
   /** The stop is written again, now and, if that fails, at the next reads (90 s at most). */
   requestReaffirm() {
-    this.reaffirm = { until: this.now() + TIMINGS.reaffirm, running: false };
+    this.reaffirm = { until: this.now() + TIMINGS.reaffirm, running: false, since: this.writeSeq };
     this.reaffirmStop();
   }
 
@@ -1628,6 +1659,11 @@ export class VenstarApp {
     const t = this.thermostat;
     const reaffirm = this.reaffirm;
     if (!t || !reaffirm || reaffirm.running) {
+      return;
+    }
+    if (!this.config.allowCommands) {
+      // The commands were turned off meanwhile: nothing written any more.
+      this.reaffirm = undefined;
       return;
     }
     reaffirm.running = true;

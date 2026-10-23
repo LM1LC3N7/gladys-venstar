@@ -11,7 +11,7 @@ import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
 import { VenstarApp } from '../src/app.js';
 import { ACTIONS, MINUTE, SECOND } from '../src/constants.js';
 import { registerHandlers } from '../src/handlers.js';
-import { memoryStore } from '../src/store.js';
+import { memoryStore, secretHash } from '../src/store.js';
 import { FP1, FP2, HOST, NOW, fakeNetwork, settle, thermostat } from './helpers/fakeVenstar.js';
 
 const CONFIG = { address: HOST };
@@ -534,4 +534,68 @@ test('an unreachable thermostat: backoff, never sooner than the interval', async
   const tries = net.opened.length;
   await advance(59 * SECOND, 1000);
   assert.equal(net.opened.length, tries);
+});
+
+/** A stop after a start never confirmed: the 90 s watch is armed. */
+async function watched(t) {
+  const net = fakeNetwork(thermostat({ info: { mode: 0 } }));
+  const ctx = await setup(t, { config: ALLOWED, net });
+  net.ignoreControl = true;
+  const start = await ctx.send('mode', 1, { wait: 500 });
+  assert.match(failure(start), /sans confirmation/);
+  net.ignoreControl = false;
+  const stop = await ctx.send('mode', 0, { wait: 500 });
+  assert.ok(ok(stop), failure(stop));
+  assert.equal(ctx.app.reaffirm?.watch, true);
+  return { ...ctx, net };
+}
+
+test('the watch after a stop ends as soon as the commands are turned off (m1)', async (t) => {
+  const { gladys, app, net, advance } = await watched(t);
+  await gladys.fake.configUpdated(CONFIG);
+  await settle();
+  assert.equal(app.reaffirm, undefined);
+  const posts = net.controls().length;
+  net.device.info.mode = 1;
+  await advance(2 * MINUTE, 1000);
+  assert.equal(net.controls().length, posts, 'nothing written once read only');
+});
+
+test('a start refused by the thermostat does not end the watch (m2)', async (t) => {
+  const { app, net, send, advance } = await watched(t);
+  net.status.set('POST /control', 400);
+  const refused = await send('mode', 1, { wait: 500 });
+  assert.ok(!ok(refused));
+  assert.equal(app.reaffirm?.watch, true);
+  net.status.delete('POST /control');
+  net.device.info.mode = 1;
+  await advance(70 * SECOND, 1000);
+  assert.equal(net.device.info.mode, 0, 'the stop was written again');
+});
+
+test('a start accepted after the stop ends the watch', async (t) => {
+  const { app, send } = await watched(t);
+  const start = await send('mode', 1, { wait: 500 });
+  assert.ok(ok(start), failure(start));
+  assert.equal(app.reaffirm, undefined);
+});
+
+test('a PIN changed while the container was stopped lifts the refused marker (m3)', async (t) => {
+  const salt = '0123456789abcdef0123456789abcdef';
+  const tag = (pin) => secretHash(salt, 'pin', pin).slice(0, 1);
+  // A new PIN whose tag differs from the refused one (15 PINs out of 16 do).
+  const fresh = ['3333', '4444', '5555', '6666'].find((pin) => tag(pin) !== tag('2222'));
+  const data = {
+    salt,
+    targets: { 'http://192.168.1.20': { attemptAt: 1, pinRefused: true, pinTag: tag('2222') } },
+  };
+  const same = memoryStore(data);
+  const kept = await setup(t, { config: { ...ALLOWED, pin: '2222' }, store: same });
+  assert.equal(kept.app.memory.targets.get('http://192.168.1.20').pinRefused, true);
+  kept.app.stop();
+  t.mock.timers.reset();
+  const changed = memoryStore(data);
+  const { app } = await setup(t, { config: { ...ALLOWED, pin: fresh }, store: changed });
+  assert.equal(app.memory.targets.get('http://192.168.1.20').pinRefused, false);
+  assert.equal(changed.data.targets['http://192.168.1.20'].pinRefused, undefined);
 });
