@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-23
+
 ### Added
 
 - Venstar ColorTouch and Explorer thermostats over their documented local API
@@ -47,4 +49,5 @@ the notes of the version's GitHub Release.
 - Documentation in English and French, third-party notices for
   venstarcolortouch (MIT).
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-venstar/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-venstar/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-venstar/releases/tag/v0.1.1

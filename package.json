@@ -1,6 +1,6 @@
 {
   "name": "gladys-venstar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Gladys Assistant external integration for Venstar ColorTouch and Explorer thermostats (temperature, humidity, setpoints, mode, fan, operating state, alerts) over their documented local API. Unofficial, not affiliated with Venstar.",
   "type": "module",
