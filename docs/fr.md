@@ -1,67 +1,111 @@
-# Template de démonstration
+# Venstar
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+Intégration non officielle pour les thermostats Wi-Fi **Venstar ColorTouch et
+Explorer**, par l'API locale documentée du thermostat, sur votre propre
+réseau. Pas de cloud, pas de compte.
+
+**Jamais testé avec un vrai appareil** : elle suit la documentation publique
+de l'API et la bibliothèque venstarcolortouch (utilisée par Home Assistant).
+Sans lien avec Venstar.
 
 ## Ce que vous obtenez
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+Un appareil Gladys pour le thermostat, avec :
+
+- la température de la pièce, l'humidité intérieure (si le thermostat la
+  mesure) et la température extérieure (si une sonde extérieure est câblée) ;
+- la consigne de chauffage et la consigne de climatisation ;
+- le mode : arrêt, chauffage, climatisation, auto (seulement les modes que le
+  thermostat propose) ;
+- la ventilation : auto ou toujours en marche, et si elle tourne ;
+- le fonctionnement (en attente, chauffe, refroidit) et un texte d'état (aussi
+  verrouillé et erreur) ;
+- les alertes : l'alerte du filtre à air en valeur 0/1, et la liste des
+  alertes actives (filtre à air, lampe UV, entretien).
+
+Les températures sont dans l'unité du thermostat (°C ou °F) au moment où
+l'appareil est ajouté ; les valeurs sont toujours converties dans l'unité de
+chaque fonctionnalité telle qu'elle a été créée.
 
 ## Configuration
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+1. Sur le thermostat, activez l'**API locale** dans ses réglages Wi-Fi.
+2. Dans votre routeur, donnez au thermostat une **adresse IP fixe**. L'appareil
+   Gladys suit cette adresse : si elle change, un nouvel appareil apparaît.
+3. Dans l'onglet **Configuration** de l'intégration, saisissez l'adresse et
+   enregistrez. Le thermostat est lu aussitôt (puis toutes les minutes par
+   défaut) et apparaît dans l'onglet **Découverte** : ajoutez-le.
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+Si le **« Basic Auth »** du thermostat est activé, activez **HTTPS** et
+saisissez son nom d'utilisateur et son mot de passe. Le mot de passe est
+gardé par Gladys dans sa base, jamais réaffiché, et envoyé seulement au
+thermostat en HTTPS : jamais en HTTP simple. À la première connexion HTTPS, le
+certificat du thermostat (auto-signé) est épinglé (son empreinte SHA-256
+gardée dans `/data`) ; s'il change ensuite, plus rien n'est envoyé et l'état
+affiche la nouvelle empreinte. Si vous avez remplacé ou réinitialisé le
+thermostat, cliquez deux fois sur **Accepter le changement** (le premier clic
+affiche ce qui sera accepté, le second dans les 60 s accepte exactement
+celui-ci).
 
-## Actions
+Si l'écran du thermostat est verrouillé par un **code PIN**, saisissez-le : il
+est envoyé avec chaque commande. Un code refusé par le thermostat n'est plus
+envoyé tant que vous ne le changez pas.
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+## Commandes
 
-## Scènes
+**Désactivées par défaut.** Activez **Autoriser les commandes** pour que
+Gladys puisse changer le mode, la ventilation et les consignes. Alors :
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+- une commande est décidée sur une lecture fraîche du thermostat, jamais sur
+  une valeur en mémoire, et refusée si une valeur nécessaire est inconnue ;
+- les consignes sont refusées (jamais ramenées dans la plage) hors chauffage
+  5 à 30 °C (41 à 86 °F) et climatisation 16 à 35 °C (61 à 95 °F), et hors
+  des limites du thermostat ; en mode auto, la consigne de climatisation doit
+  rester au moins de l'écart du thermostat au-dessus de celle de chauffage ;
+  l'autre consigne est réécrite exactement telle que lue ;
+- une commande est écrite dans les 3,5 s qui suivent le clic, ou refusée sans
+  être envoyée ; elle n'est confirmée que si le thermostat affiche la valeur
+  demandée, sinon Gladys indique « envoyée, sans confirmation » et relit 5 s
+  plus tard ;
+- **l'arrêt du thermostat** (mode arrêt) n'est jamais refusé parce qu'une
+  autre commande est en cours, à cause d'une pause ou d'un refus gardé en
+  mémoire : il annule une commande pas encore écrite, et il est écrit même si
+  le thermostat est déjà à l'arrêt. Une autre commande de mise en marche
+  attend qu'il soit fini.
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+Le mode est un mode de thermostat, jamais un interrupteur : un « éteins tout »
+d'un assistant vocal ou d'une scène ne l'atteint pas.
 
-## Tableau de bord
+## Lecture
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+Le thermostat est lu à chaque **intervalle de rafraîchissement** (60 s par
+défaut, 30 s au moins), jamais plus tôt : un redémarrage, une reconnexion,
+l'onglet Découverte, une configuration enregistrée ou le bouton de test
+attendent l'intervalle. Si le thermostat ne répond pas, les essais suivants
+sont espacés (1, 2, 5, puis 10 minutes). S'il répond « occupé » (HTTP 429 ou
+5xx), toutes les lectures font une pause (1 minute à 6 heures, gardée après
+un redémarrage).
 
-## Dépannage
+Un nom d'utilisateur ou un mot de passe refusé par le thermostat arrête les
+lectures : pas de nouvel essai automatique. Changez-les, ou cliquez sur
+**Tester la connexion** (un essai, au plus une fois par intervalle).
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+Un autre thermostat qui répond à l'adresse (autre modèle, ou autre nom) est
+signalé dans l'état : ses valeurs ne sont pas affichées et les commandes sont
+refusées. Si c'est le même (renommé), cliquez deux fois sur **Accepter le
+changement**.
+
+## Limites
+
+- Un seul thermostat par installation de l'intégration.
+- Le mode absence, le programme, les consignes d'humidité et les durées de
+  fonctionnement ne sont pas encore affichés.
+- Pas de découverte sur le réseau : saisissez l'adresse.
+- Jamais testé avec un vrai appareil.
+
+## Vie privée
+
+Tout reste sur votre réseau. `/data` garde l'heure de la dernière lecture,
+l'empreinte du certificat, le modèle et le nom du thermostat, la fin d'une
+pause, et des empreintes salées d'un mot de passe ou d'un code PIN refusé
+(jamais des bons, jamais les valeurs elles-mêmes).

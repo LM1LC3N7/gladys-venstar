@@ -1,45 +1,95 @@
 // -----------------------------------------------------------------------------
-// Integration configuration.
-//
-// The configuration is filled in by the user in Gladys, from the `config_schema`
-// declared in `gladys-assistant-integration.json`. The SDK fetches it for you
-// (`gladys.getConfig()`) and notifies you of every change through
-// `gladys.onConfigUpdated()`.
-//
-// This module only provides defaults and normalizes the received object, so the
-// rest of the code never has to deal with `undefined`.
+// The configuration: the manifest `config_schema` values, normalized so the
+// rest of the code never deals with strings typed in a form. The password and
+// the PIN stay in this object only: never logged, never written to /data.
 // -----------------------------------------------------------------------------
 
-// Defaults: they MUST stay consistent with the `default` values declared in the
-// `config_schema` of the manifest.
+import { isIP } from 'node:net';
+import { POLL_INTERVAL } from './constants.js';
+
+/** Defaults, mirrored by the manifest (checked by test/manifest.test.js). */
 export const DEFAULT_CONFIG = {
-  latitude: 48.8566, // Paris
-  longitude: 2.3522,
-  unit: 'celsius', // 'celsius' | 'fahrenheit'
-  // Seconds between two reads of the polled sensors. Gladys polls at most once
-  // a minute: slower intervals are applied by skipping polls (see
-  // createPoller in src/devices/index.js).
-  poll_frequency: 300,
-  // Reserved key (NOT in config_schema): because the manifest declares both
-  // 'local' and 'cloud' in its `transports` field, Gladys shows a standard
-  // "Prefer the local connection" toggle and sends the user's choice here.
-  // Read-only for the integration; defaults to true.
-  GLADYS_PREFER_LOCAL: true,
+  address: '',
+  use_https: false,
+  username: '',
+  password: '',
+  pin: '',
+  allow_commands: false,
+  poll_interval: POLL_INTERVAL.default,
+  language: 'fr',
 };
 
+const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+
 /**
- * Merge the user config with the defaults.
- * @param {Record<string, unknown>} raw config returned by the SDK
+ * The address typed by the user: an IPv4 address or a host name, with an
+ * optional port (80, or 443 with HTTPS, by default).
+ * @returns {{ host: string, port: number } | undefined} undefined when invalid.
  */
+export function parseAddress(raw, secure = false) {
+  const text = String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z]+:\/\//, '')
+    .replace(/[/?#].*$/, '');
+  if (text === '' || text.length > 260) {
+    return undefined;
+  }
+  const match = text.match(/^([^:@]+)(?::(\d{1,5}))?$/);
+  if (!match) {
+    return undefined;
+  }
+  const host = match[1];
+  const port = match[2] === undefined ? (secure ? 443 : 80) : Number(match[2]);
+  if (!Number.isInteger(port) || port < 1 || port > 65535 || host.length > 253) {
+    return undefined;
+  }
+  if (isIP(host) === 4) {
+    return { host, port };
+  }
+  if (/^[\d.]+$/.test(host)) {
+    return undefined;
+  }
+  return host.split('.').every((label) => LABEL.test(label)) ? { host, port } : undefined;
+}
+
+/** The address as the ids and /data name it: "192.168.1.20", or "host:8080" with a port. */
+export const addressKey = ({ host, port }, secure) =>
+  port === (secure ? 443 : 80) ? host : `${host}:${port}`;
+
+/** Only `true` (or the text "true") turns an option on: anything else, missing included, is off. */
+const strictTrue = (value) => value === true || value === 'true';
+
 export function normalizeConfig(raw = {}) {
+  const c = { ...DEFAULT_CONFIG };
+  for (const [key, value] of Object.entries(raw ?? {})) {
+    if (Object.hasOwn(DEFAULT_CONFIG, key) && value != null) {
+      c[key] = value;
+    }
+  }
+  const secure = strictTrue(c.use_https);
+  const typed = String(c.address ?? '').trim();
+  const address = parseAddress(typed, secure);
+  const username = typeof c.username === 'string' ? c.username.trim().slice(0, 64) : '';
+  const password = typeof c.password === 'string' ? c.password.slice(0, 128) : '';
+  // The PIN of the thermostat's screen lock: 1 to 4 digits, sent as 4 (venstarcolortouch zfill).
+  const pinText = String(c.pin ?? '').trim();
+  const pin = /^\d{1,4}$/.test(pinText) ? pinText.padStart(4, '0') : undefined;
+  const interval = Number(c.poll_interval);
   return {
-    ...DEFAULT_CONFIG,
-    ...raw,
-    // Force the types: config may arrive as strings from a form.
-    latitude: Number(raw.latitude ?? DEFAULT_CONFIG.latitude),
-    longitude: Number(raw.longitude ?? DEFAULT_CONFIG.longitude),
-    poll_frequency: Number(raw.poll_frequency ?? DEFAULT_CONFIG.poll_frequency),
-    // The preference is a boolean; anything but an explicit false means true.
-    GLADYS_PREFER_LOCAL: raw.GLADYS_PREFER_LOCAL !== false,
+    address,
+    key: address ? addressKey(address, secure) : undefined,
+    /** What was typed and is not a valid address (shown in the status). */
+    invalidAddress: typed !== '' && !address ? typed.slice(0, 60) : undefined,
+    secure,
+    credentials: username !== '' && password !== '' ? { username, password } : undefined,
+    pin,
+    pinInvalid: pinText !== '' && pin === undefined,
+    allowCommands: strictTrue(c.allow_commands),
+    pollInterval:
+      Number.isFinite(interval) && String(c.poll_interval).trim() !== ''
+        ? Math.min(POLL_INTERVAL.max, Math.max(POLL_INTERVAL.min, Math.round(interval)))
+        : POLL_INTERVAL.default,
+    language: c.language === 'en' ? 'en' : 'fr',
   };
 }
