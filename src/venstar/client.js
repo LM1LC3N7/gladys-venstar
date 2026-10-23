@@ -45,12 +45,13 @@ export class Session {
   constructor({ address, secure, credentials, checkCertificate, open = openConnection }) {
     this.address = address;
     this.secure = secure;
+    // Only the user name goes into the header (quoted): the password is only hashed.
     this.credentials =
       secure &&
       credentials &&
       safeCredential(credentials.username) &&
-      safeCredential(credentials.password) &&
-      credentials.username !== ''
+      credentials.username !== '' &&
+      typeof credentials.password === 'string'
         ? credentials
         : undefined;
     this.checkCertificate = checkCertificate;
@@ -122,11 +123,19 @@ export class Session {
    * @param {{ method?: string, path: string, body?: string, timeoutMs: () => number,
    *   beforeSend?: () => void }} options `timeoutMs` is read before each step
    */
-  async request({ method = 'GET', path, body, timeoutMs, beforeSend }) {
+  async request({ method = 'GET', path, body, timeoutMs, beforeSend, rejected }) {
     let answer;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    // Whether the challenge kept was received during THIS request: only an
+    // answer to a fresh challenge that is refused means a wrong password. A
+    // nonce reused from an earlier request may have expired or be single-use
+    // (many embedded servers do not say `stale=true`): its 401 is answered
+    // once with the new challenge, as `requests.HTTPDigestAuth` does.
+    let fresh = false;
+    let staleRetried = false;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
       const connection = await this.connect(timeoutMs());
       const authorization = this.authorization(method, path);
+      const answeredFresh = Boolean(authorization) && fresh;
       answer = await connection.request({
         method,
         path,
@@ -138,7 +147,8 @@ export class Session {
       if (answer.status !== 401) {
         break;
       }
-      // A 401 is an answer: the request was not applied.
+      // A 401 is an answer: the request was not applied, its write does not count.
+      rejected?.();
       const challenge = parseChallenge(answer.headers?.['www-authenticate']);
       if (!challenge || !this.credentials) {
         throw new VenstarError(ERROR_KINDS.AUTH_NEEDED, 'A password is asked', {
@@ -147,14 +157,18 @@ export class Session {
         });
       }
       const stale = String(challenge.get('stale') ?? '').toLowerCase() === 'true';
-      if (authorization && !stale) {
+      if (answeredFresh && (!stale || staleRetried)) {
         throw new VenstarError(ERROR_KINDS.AUTH, 'Credentials refused', {
           notSent: true,
           status: 401,
         });
       }
+      if (answeredFresh) {
+        staleRetried = true;
+      }
       this.challenge = challenge;
       this.count = 0;
+      fresh = true;
     }
     const { status, headers } = answer;
     if (status === 401) {

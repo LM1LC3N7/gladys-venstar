@@ -105,8 +105,8 @@
         "fr": "Code PIN de verrouillage (facultatif)"
       },
       "description": {
-        "en": "Only if the thermostat's screen is locked by a PIN: sent with each command. Kept by Gladys in its database, never shown again. A PIN refused is never sent again until you change it.",
-        "fr": "Seulement si l'écran du thermostat est verrouillé par un code PIN : envoyé avec chaque commande. Gardé par Gladys dans sa base, jamais réaffiché. Un code refusé n'est plus envoyé tant que vous ne le changez pas."
+        "en": "Only if the thermostat's screen is locked by a PIN: sent with each command, in clear on your network without HTTPS. Kept by Gladys in its database, never shown again. A PIN refused is not sent again (except by a stop) until you change it.",
+        "fr": "Seulement si l'écran du thermostat est verrouillé par un code PIN : envoyé avec chaque commande, en clair sur votre réseau sans HTTPS. Gardé par Gladys dans sa base, jamais réaffiché. Un code refusé n'est plus envoyé (sauf par un arrêt) tant que vous ne le changez pas."
       },
       "required": false,
       "default": ""
@@ -119,8 +119,8 @@
         "fr": "Autoriser les commandes"
       },
       "description": {
-        "en": "Off by default: read only, every command refused. On: Gladys may change the mode (off, heating, cooling, auto), the fan and the setpoints (heating 5 to 30 °C, cooling 16 to 35 °C, within the thermostat's limits).",
-        "fr": "Désactivé par défaut : lecture seule, toute commande refusée. Activé : Gladys peut changer le mode (arrêt, chauffage, climatisation, auto), la ventilation et les consignes (chauffage 5 à 30 °C, climatisation 16 à 35 °C, dans les limites du thermostat)."
+        "en": "Off by default: read only, every command refused, turning off included. On: Gladys may change the mode (off, heating, cooling, auto), the fan and the setpoints (heating 5 to 30 °C, cooling 16 to 35 °C, within the thermostat's limits).",
+        "fr": "Désactivé par défaut : lecture seule, toute commande refusée, arrêt compris. Activé : Gladys peut changer le mode (arrêt, chauffage, climatisation, auto), la ventilation et les consignes (chauffage 5 à 30 °C, climatisation 16 à 35 °C, dans les limites du thermostat)."
       },
       "required": false,
       "default": false

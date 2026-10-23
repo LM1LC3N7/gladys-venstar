@@ -26,6 +26,10 @@
   Another model, type or name = "another thermostat" (values hidden, commands
   refused); a name unreadable this time = "unknown", not another thermostat.
   A renamed thermostat is accepted with "Accept the change" (two clicks).
+  A name missing at the first read is completed at the first read showing it
+  (same model and type), then compared; until then the commands other than
+  the stop are refused (two thermostats of the same model are told apart by
+  their name only: the docs ask for distinct names). Review 1, I3.
 - HTTPS: certificate pinned at the first connection (SHA-256 fingerprint in
   `/data`, written before the password leaves; `/data` not writable = nothing
   sent), checked on every connection before any byte; another certificate =
@@ -33,14 +37,24 @@
   (first click shows, second within 60 s pins exactly that). Never relearned
   by a saved configuration.
 - Credentials only over HTTPS (Digest, MD5, qop auth or none). A 401 over
-  plain HTTP = "turn on HTTPS". A refusal (or a password asked and none
-  usable) is final: a salted SHA-256 of the refused pair in `/data` (never of
-  an accepted one, cleared at the first success), no automatic retry; new
-  credentials or "Test the connection" (at most once per interval) try again.
+  plain HTTP = "turn on HTTPS". A 401 on a nonce reused from an earlier
+  request (single-use or expired nonces, `stale` or not) is answered once with
+  the new challenge, as `requests.HTTPDigestAuth`; only a refused answer to a
+  fresh challenge (or a second stale one) is a refusal (review 1, B1). A
+  refusal (or a password asked and none usable) is final: a salted SHA-256 of
+  the refused pair in `/data` (cleared at the first success), no automatic
+  retry; new credentials or "Test the connection" (at most once per interval)
+  try again. A 401 answer to a write is not a write: its number is given back
+  (`rejected`), so it never counts as a start or a stop written.
+- The password may hold any character (it is only hashed); a user name with a
+  quote, a backslash or a control character cannot go into the header: the
+  status says so (review 1, M3).
 - PIN: 1 to 4 digits, padded to 4 (as the reference), sent only in the POST
-  form. A `/control` answer whose reason names the PIN keeps a salted
-  fingerprint of it: later start/setpoint/fan commands are refused unsent
-  until the PIN changes; the stop still tries once.
+  form (in clear without HTTPS: documented). A `/control` answer whose reason
+  names the PIN keeps a simple marker in `/data` (no fingerprint: 10^4 tries
+  would find a 4-digit PIN back; review 1, M1), cleared when the PIN changes
+  or a command with it succeeds: later start/setpoint/fan commands are
+  refused unsent until then; the stop still tries once.
 - 429 and 5xx: a pause of 1 min to 6 h (Retry-After in seconds, or a date
   compared with the thermostat's own `Date` header), never shorter than the
   interval, kept in `/data`. A 5xx other than 503 on `/query/sensors` or
@@ -55,7 +69,11 @@
   the thermostat's unit, rounded to 0.5 °C / 1 °F, checked against its own
   limits (unknown limits = refused) and, in auto mode, against
   `setpointdelta` (refused, never moved). The other setpoint is written back
-  exactly as read (the API needs both).
+  exactly as read (the API needs both). While a guard says a setpoint command
+  not confirmed yet may still change the other setpoint, a setpoint or mode
+  command is refused ("previous command not confirmed yet") rather than
+  writing the old value over it (review 1, I1). "Already so" needs no guard
+  of either kind (`wake` or `stop`) on the field (review 1, I2).
 - Mode off = the protective command: never refused for a command in flight,
   a pause, a credentials or PIN refusal kept in `/data`, nor a configuration
   saved meanwhile; cancels a start not written yet; own connection (3 stops
@@ -65,9 +83,18 @@
   when the option is off, another thermostat answers or the certificate
   changed. A start written before a stop and answered after it is reported
   overtaken and the stop is written again (reaffirmed, retried at the next
-  reads for 90 s).
+  reads for 90 s). A start never confirmed before a stop (guard `mode:wake`)
+  arms a watch: for 90 s, a read showing the thermostat on writes the stop
+  again (review 1, M4); a newer start written by the user ends any watch or
+  reaffirmation. The stop writes back the setpoint a setpoint command not
+  confirmed yet asked (never refused for it, never undoing it).
 - The option "Allow the commands" turned off applies at once (before the
   configuration queue); a stop checks it too (as gladys-coolmasternet).
+  Approved at review 1: turning a heating off is not harmless (frost, cold),
+  and read only must stay read only. Documented in the docs and the manifest.
+- A stop is refused when another thermostat answers (renaming it on its
+  screen is enough) or the certificate changed, until "Accept the change":
+  documented.
 - Units: the features take the API unit (°C or °F, both listed by the core
   for temperature-sensor, thermostat and air-conditioning) when created;
   states always converted to the unit of the feature as created.
@@ -92,6 +119,10 @@
   it when the setpoints could not be read), the PIN error text, keep-alive on
   the local API, the Digest parameters of the "Basic Auth" mode, the outdoor
   sensor listed when none is wired.
+- Check on a real thermostat whether its server takes two connections at
+  once: a read and a stop (or a command) may each open one at the same time;
+  an embedded server serving one connection at a time could delay the stop
+  (review 1, M6). If so: one connection at a time, the stop first.
 
 ## Not verified
 

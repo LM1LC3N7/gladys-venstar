@@ -6,6 +6,7 @@
 
 import { isIP } from 'node:net';
 import { POLL_INTERVAL } from './constants.js';
+import { safeCredential } from './venstar/digest.js';
 
 /** Defaults, mirrored by the manifest (checked by test/manifest.test.js). */
 export const DEFAULT_CONFIG = {
@@ -83,6 +84,8 @@ export function normalizeConfig(raw = {}) {
     invalidAddress: typed !== '' && !address ? typed.slice(0, 60) : undefined,
     secure,
     credentials: username !== '' && password !== '' ? { username, password } : undefined,
+    /** A user name that cannot go into the Digest header (a quote, a backslash…). */
+    usernameInvalid: username !== '' && !safeCredential(username),
     pin,
     pinInvalid: pinText !== '' && pin === undefined,
     allowCommands: strictTrue(c.allow_commands),

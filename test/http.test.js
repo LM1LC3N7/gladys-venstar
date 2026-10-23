@@ -121,6 +121,20 @@ test('HTTPS: the certificate checked first, Digest on the same connection', asyn
   assert.match(s.stats.authorizations[2], /nc=00000002/);
 });
 
+test('HTTPS: a password with a quote or a backslash works (it is only hashed)', async (t) => {
+  const password = 'p"w\\x';
+  const s = await server(t, { secure: true, auth: { username: 'admin', password } });
+  const session = new Session({
+    address: { host: '127.0.0.1', port: s.port },
+    secure: true,
+    credentials: { username: 'admin', password },
+    checkCertificate: async () => {},
+  });
+  assert.deepEqual(await session.request({ path: '/', timeoutMs }), ROOT);
+  session.close();
+  assert.ok(s.stats.authorizations.every((a) => !a || !a.includes(password)));
+});
+
 test('HTTPS: a refused certificate means not one byte written', async (t) => {
   const s = await server(t, { secure: true });
   const session = new Session({

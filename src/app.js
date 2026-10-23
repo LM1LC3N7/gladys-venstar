@@ -188,6 +188,7 @@ export class VenstarApp {
   async doStart(raw) {
     this.stop();
     const generation = this.generation;
+    const previousPin = this.configLoaded ? this.config.pin : undefined;
     this.config = this.configOf(raw);
     await this.thermostat?.running?.catch(() => {});
     const loaded = await this.store.load().catch(() => null);
@@ -212,6 +213,12 @@ export class VenstarApp {
       return;
     }
     const memory = this.targetMemory(t);
+    if (this.configLoaded && previousPin !== this.config.pin && memory.pinRefused) {
+      // A new PIN: the marker of the refused one goes.
+      memory.pinRefused = false;
+      await this.saveMemory();
+    }
+    this.configLoaded = true;
     if (this.credentialsRefused()) {
       // Never an automatic retry: new credentials or the test button.
       t.problem = { kind: 'refused' };
@@ -294,6 +301,12 @@ export class VenstarApp {
     if (this.config.language !== previous.language) {
       this.published = undefined;
     }
+    const memory = this.thermostat ? this.memory.targets.get(this.thermostat.target) : undefined;
+    if (memory?.pinRefused && this.config.pin !== previous.pin) {
+      // A new PIN: the marker of the refused one goes.
+      memory.pinRefused = false;
+      await this.saveMemory();
+    }
     await this.publishAll(this.generation);
   }
 
@@ -333,10 +346,6 @@ export class VenstarApp {
     return secretHash(this.memory.salt, 'credentials', c?.username ?? '', c?.password ?? '');
   }
 
-  pinHash() {
-    return secretHash(this.memory.salt, 'pin', this.config.pin ?? '');
-  }
-
   /** Whether the user name and password of the configuration were refused (kept in /data). */
   credentialsRefused(t = this.thermostat) {
     const memory = t ? this.memory.targets.get(t.target) : undefined;
@@ -347,7 +356,7 @@ export class VenstarApp {
 
   pinRefused(t = this.thermostat) {
     const memory = t ? this.memory.targets.get(t.target) : undefined;
-    return Boolean(this.config.pin && memory?.refusedPin && memory.refusedPin === this.pinHash());
+    return Boolean(this.config.pin && memory?.pinRefused);
   }
 
   paused(t = this.thermostat) {
@@ -422,15 +431,17 @@ export class VenstarApp {
   /**
    * Whether the thermostat that answers is the one kept for the address:
    * 'ok', 'other' (another model, type or name) or 'unknown' (a value
-   * unreadable this time: not "another thermostat").
+   * unreadable this time: not "another thermostat"). `forCommand`: an
+   * identity kept without a name (never read yet) is not enough to tell two
+   * thermostats of the same model apart: 'unknown', the command is refused.
    */
-  identity(t, root, info) {
+  identity(t, root, info, { forCommand = false } = {}) {
     const kept = this.memory.targets.get(t.target)?.identity;
     if (!root || !root.model) {
       return 'unknown';
     }
     if (!kept) {
-      return 'ok';
+      return forCommand ? 'unknown' : 'ok';
     }
     if (kept.model !== root.model || (kept.type && root.type && kept.type !== root.type)) {
       return 'other';
@@ -442,6 +453,8 @@ export class VenstarApp {
       if (info.name !== kept.name) {
         return 'other';
       }
+    } else if (forCommand) {
+      return 'unknown';
     }
     return 'ok';
   }
@@ -537,8 +550,15 @@ export class VenstarApp {
     if (next !== null) {
       this.schedule(t, next);
     }
-    if (this.reaffirm && !this.reaffirm.running && this.now() < this.reaffirm.until) {
-      this.reaffirmStop();
+    const reaffirm = this.reaffirm;
+    if (reaffirm && !reaffirm.running && this.now() < reaffirm.until) {
+      // A watch (a start never confirmed before the stop) writes only when the thermostat shows on.
+      const on = this.live(t) && t.snapshot.info.mode !== VENSTAR.MODE.OFF;
+      if (!reaffirm.watch || on) {
+        this.reaffirmStop();
+      }
+    } else if (reaffirm && this.now() >= reaffirm.until) {
+      this.reaffirm = undefined;
     }
   }
 
@@ -609,6 +629,11 @@ export class VenstarApp {
       } else {
         if (!memory.identity) {
           memory.identity = seen;
+          save = true;
+        } else if (memory.identity.name === undefined && info.name !== undefined) {
+          // Kept without a name (unreadable at the first read): completed now,
+          // compared from now on (same model and type checked above).
+          memory.identity = { ...memory.identity, name: info.name };
           save = true;
         }
         if (memory.refusedIdentity) {
@@ -867,8 +892,9 @@ export class VenstarApp {
     const kind = t.problem?.kind;
     let main;
     if (kind === 'refused') {
-      main =
-        this.config.secure && this.config.credentials && t.reason !== 'a password is asked'
+      main = this.config.usernameInvalid
+        ? T.usernameInvalid
+        : this.config.secure && this.config.credentials && t.reason !== 'a password is asked'
           ? T.refused
           : T.authNeeded;
     } else if (kind === 'certificate') {
@@ -1162,7 +1188,7 @@ export class VenstarApp {
       if (generation !== this.generation) {
         throw this.refusal(ERRORS.unknownDevice);
       }
-      const check = this.identity(t, root, info);
+      const check = this.identity(t, root, info, { forCommand: true });
       if (check !== 'ok') {
         throw this.refusal(check === 'other' ? ERRORS.otherThermostat : ERRORS.identityUnknown);
       }
@@ -1192,6 +1218,10 @@ export class VenstarApp {
           body: form.toString(),
           timeoutMs: until(answerBy),
           beforeSend: () => this.beforeSend(generation, entry, sendBy),
+          // Answered 401 (Digest): not applied, its number does not count as written.
+          rejected: () => {
+            entry.sentSeq = undefined;
+          },
         });
       } catch (err) {
         if (err?.beforeSend) {
@@ -1223,6 +1253,7 @@ export class VenstarApp {
         }
         throw this.refusal(ERRORS.refused);
       }
+      await this.pinAccepted(t);
       if (this.supersededBy(entry)) {
         throw this.refusal(ERRORS.superseded);
       }
@@ -1268,6 +1299,8 @@ export class VenstarApp {
     // Only a request that really leaves counts as written (lot 13).
     this.writeSeq += 1;
     entry.sentSeq = this.writeSeq;
+    // A newer start of the user: a stop waiting to be written again gives way.
+    this.reaffirm = undefined;
   }
 
   /**
@@ -1293,16 +1326,33 @@ export class VenstarApp {
 
   async keepPinRefused(t) {
     const memory = this.targetMemory(t);
-    memory.refusedPin = this.pinHash();
+    memory.pinRefused = true;
     await this.saveMemory();
     this.logger.warn('Venstar: the PIN was refused; commands refused until it changes');
     await this.updateStatus(this.generation);
   }
 
+  /** A command with the PIN accepted: the marker of a refused PIN goes. */
+  async pinAccepted(t) {
+    const memory = this.memory.targets.get(t.target);
+    if (this.config.pin && memory?.pinRefused) {
+      memory.pinRefused = false;
+      await this.saveMemory();
+    }
+  }
+
+  /** Whether a command of either kind (start or stop) not confirmed yet may still change `field`. */
+  guarded(field) {
+    return this.guardActive(`${field}:wake`) || this.guardActive(`${field}:stop`);
+  }
+
   /**
    * What to write: { form, field, expected, guard }, or null when the
-   * thermostat already shows it (and no guard says a previous command may
-   * still change it).
+   * thermostat already shows it (and no guard of either kind says a previous
+   * command may still change it). The API needs both setpoints with a mode or
+   * a setpoint: the one not asked is written back as read, so a command is
+   * refused while a previous one, not confirmed yet, may still change it (it
+   * would be overwritten by the old value).
    */
   plan(change, info, unit, featureUnit) {
     const can = offers(info.availableModes);
@@ -1311,7 +1361,7 @@ export class VenstarApp {
         throw this.refusal(ERRORS.incompleteState);
       }
       const guard = 'fan:wake';
-      if (info.fan === change.fan && !this.guardActive(guard)) {
+      if (info.fan === change.fan && !this.guarded('fan')) {
         return null;
       }
       return {
@@ -1333,8 +1383,11 @@ export class VenstarApp {
       if (change.mode === VENSTAR.MODE.AUTO) {
         this.checkDeadband(info, info.heat, info.cool, unit);
       }
+      if (this.guardActive('heat:wake') || this.guardActive('cool:wake')) {
+        throw this.refusal(ERRORS.previousPending);
+      }
       const guard = 'mode:wake';
-      if (info.mode === change.mode && !this.guardActive(guard)) {
+      if (info.mode === change.mode && !this.guarded('mode')) {
         return null;
       }
       // venstarcolortouch set_mode: the mode with both setpoints, written back exactly as read.
@@ -1369,8 +1422,11 @@ export class VenstarApp {
       this.checkDeadband(info, heat, cool, unit);
     }
     const field = heatKind ? 'heat' : 'cool';
+    if (this.guardActive(`${heatKind ? 'cool' : 'heat'}:wake`)) {
+      throw this.refusal(ERRORS.previousPending);
+    }
     const guard = `${field}:wake`;
-    if (this.same(field, info[field], value) && !this.guardActive(guard)) {
+    if (this.same(field, info[field], value) && !this.guarded(field)) {
       return null;
     }
     return {
@@ -1426,7 +1482,10 @@ export class VenstarApp {
       Math.max(1, Math.min(TIMINGS.requestTimeout, sendBy - 1_200 - this.now()));
     const until = (by) => () => Math.max(1, Math.min(TIMINGS.requestTimeout, by - this.now()));
     const session = this.session(t, null);
-    let seq;
+    // A start sent before and never confirmed may still be taken late by the
+    // thermostat (another connection): then the stop is watched and written
+    // again if a read shows the thermostat on (90 s).
+    const wakePending = this.guardActive('mode:wake');
     try {
       // The setpoints, to write them back exactly (venstarcolortouch set_mode);
       // in doubt (no answer in time), the mode alone: the stop always leaves.
@@ -1458,15 +1517,25 @@ export class VenstarApp {
       }
       const form = new URLSearchParams();
       form.set('mode', String(VENSTAR.MODE.OFF));
-      if (info?.heat !== undefined && info?.cool !== undefined) {
-        form.set('heattemp', String(info.heat));
-        form.set('cooltemp', String(info.cool));
+      // The setpoints written back: as read, or, when a setpoint command not
+      // confirmed yet may still change one, the value that command asked (the
+      // stop is never refused for it, and never undoes it).
+      const setpoint = (field) =>
+        this.guardActive(`${field}:wake`)
+          ? this.guards.get(`${field}:wake`).expected
+          : info?.[field];
+      const heat = setpoint('heat');
+      const cool = setpoint('cool');
+      if (heat !== undefined && cool !== undefined) {
+        form.set('heattemp', String(heat));
+        form.set('cooltemp', String(cool));
       }
       if (this.config.pin) {
         form.set('pin', this.config.pin);
       }
       this.logger.info(`Venstar: mode off -> sent${internal ? ' again' : ''}`);
       let answer;
+      let before;
       try {
         answer = await session.request({
           method: 'POST',
@@ -1480,9 +1549,13 @@ export class VenstarApp {
             if (this.now() > sendBy) {
               throw this.refusal(ERRORS.tooSlow);
             }
+            before = this.lastStopSeq;
             this.writeSeq += 1;
-            seq = this.writeSeq;
-            this.lastStopSeq = seq;
+            this.lastStopSeq = this.writeSeq;
+          },
+          // Answered 401 (Digest): not applied, it does not count as a stop written.
+          rejected: () => {
+            this.lastStopSeq = before;
           },
         });
       } catch (err) {
@@ -1511,6 +1584,10 @@ export class VenstarApp {
           throw this.refusal(ERRORS.refusedPin);
         }
         throw this.refusal(ERRORS.refused);
+      }
+      await this.pinAccepted(t);
+      if (wakePending && !internal) {
+        this.reaffirm = { until: this.now() + TIMINGS.reaffirm, running: false, watch: true };
       }
       let back;
       try {

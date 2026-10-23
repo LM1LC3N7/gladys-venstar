@@ -496,17 +496,25 @@ test('another thermostat at the address: values hidden, commands refused, accept
 test('a PIN refused: kept refused, the next start not sent; a stop still tries', async (t) => {
   const net = fakeNetwork(thermostat({ pin: '1111' }));
   const store = memoryStore();
-  const { send } = await setup(t, { config: { ...ALLOWED, pin: '2222' }, net, store });
+  const { gladys, send } = await setup(t, { config: { ...ALLOWED, pin: '2222' }, net, store });
   const first = await send('heat-setpoint', 22);
   assert.match(failure(first), /PIN/);
-  assert.match(store.data.targets['http://192.168.1.20'].refusedPin, /^[0-9a-f]{64}$/);
+  // A simple marker: no fingerprint of a 4-digit PIN, which would be easy to find back.
+  assert.equal(store.data.targets['http://192.168.1.20'].pinRefused, true);
   const posts = net.controls().length;
   const second = await send('heat-setpoint', 23);
   assert.match(failure(second), /PIN/);
   assert.equal(net.controls().length, posts);
   await send('mode', 0);
   assert.equal(net.controls().length, posts + 1);
-  assert.doesNotMatch(JSON.stringify(store.data), /2222/);
+  assert.doesNotMatch(JSON.stringify(store.data), /2222|[0-9a-f]{64}/);
+  // A new PIN lifts the marker; the right one is accepted.
+  net.device.pin = '3333';
+  await gladys.fake.configUpdated({ ...ALLOWED, pin: '3333' });
+  await settle();
+  assert.equal(store.data.targets['http://192.168.1.20'].pinRefused, undefined);
+  const third = await send('heat-setpoint', 23);
+  assert.ok(ok(third), failure(third));
 });
 
 test('a secondary endpoint failing never stops the main values', async (t) => {

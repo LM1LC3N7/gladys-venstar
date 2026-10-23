@@ -120,6 +120,10 @@ export const T = {
     'The PIN was refused by the thermostat: commands stay refused until you change it.',
     'Le code PIN a été refusé par le thermostat : les commandes restent refusées tant que vous ne le changez pas.',
   ),
+  usernameInvalid: both(
+    'The user name holds a quote, a backslash or a control character: it cannot be sent in the Digest header. Change it on the thermostat and in the configuration.',
+    "Le nom d'utilisateur contient un guillemet, une barre oblique inverse ou un caractère de contrôle : il ne peut pas être envoyé dans l'en-tête Digest. Changez-le sur le thermostat et dans la configuration.",
+  ),
   connecting: both('Connecting to the thermostat…', 'Connexion au thermostat…'),
   connected: (name, model) =>
     both(
@@ -260,8 +264,12 @@ export const ERRORS = {
     "Annulée par une commande plus récente (arrêt), rien n'a été envoyé.",
   ),
   superseded: both(
-    'Sent, but an off command came after it: the thermostat stays off.',
-    "Envoyée, mais une commande d'arrêt l'a suivie : le thermostat reste arrêté.",
+    'Sent, but an off command followed it: the off command is written again.',
+    "Envoyée, mais une commande d'arrêt l'a suivie : l'arrêt est réécrit.",
+  ),
+  previousPending: both(
+    'A previous setpoint command is not confirmed yet: refused, so that it is not overwritten by the old value. Try again in a moment.',
+    "Une commande de consigne précédente n'est pas encore confirmée : refusée, pour ne pas la remplacer par l'ancienne valeur. Réessayez dans un instant.",
   ),
   tooSlow: both(
     'The thermostat was too slow: command refused, nothing sent.',

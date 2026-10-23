@@ -48,8 +48,11 @@ affiche ce qui sera accepté, le second dans les 60 s accepte exactement
 celui-ci).
 
 Si l'écran du thermostat est verrouillé par un **code PIN**, saisissez-le : il
-est envoyé avec chaque commande. Un code refusé par le thermostat n'est plus
-envoyé tant que vous ne le changez pas.
+est envoyé avec chaque commande (dans le corps de la requête, jamais dans
+l'adresse). Sans HTTPS, le code PIN circule **en clair** sur votre réseau
+local. Un code refusé par le thermostat n'est plus envoyé pour les commandes
+de mise en marche, de consigne et de ventilation tant que vous ne le changez
+pas (un arrêt l'essaie quand même).
 
 ## Commandes
 
@@ -63,15 +66,28 @@ Gladys puisse changer le mode, la ventilation et les consignes. Alors :
   des limites du thermostat ; en mode auto, la consigne de climatisation doit
   rester au moins de l'écart du thermostat au-dessus de celle de chauffage ;
   l'autre consigne est réécrite exactement telle que lue ;
+- une commande de consigne ou de mode est refusée tant qu'une commande de
+  consigne précédente n'est pas confirmée (l'API exige les deux consignes :
+  l'ancienne valeur serait réécrite par-dessus) ; réessayez quelques secondes
+  plus tard ;
 - une commande est écrite dans les 3,5 s qui suivent le clic, ou refusée sans
   être envoyée ; elle n'est confirmée que si le thermostat affiche la valeur
   demandée, sinon Gladys indique « envoyée, sans confirmation » et relit 5 s
   plus tard ;
-- **l'arrêt du thermostat** (mode arrêt) n'est jamais refusé parce qu'une
-  autre commande est en cours, à cause d'une pause ou d'un refus gardé en
-  mémoire : il annule une commande pas encore écrite, et il est écrit même si
-  le thermostat est déjà à l'arrêt. Une autre commande de mise en marche
-  attend qu'il soit fini.
+- **l'arrêt du thermostat** (mode arrêt) exige aussi **Autoriser les
+  commandes** : lecture seule veut dire lecture seule (couper le chauffage
+  n'est pas sans risque en hiver). Une fois autorisé, il n'est jamais refusé
+  parce qu'une autre commande est en cours, à cause d'une pause ou d'un refus
+  gardé en mémoire : il annule une commande pas encore écrite, réécrit la
+  consigne demandée par une commande pas encore confirmée, et il est écrit
+  même si le thermostat est déjà à l'arrêt. Une autre commande de mise en
+  marche attend qu'il soit fini. Après une mise en marche jamais confirmée,
+  l'intégration surveille : si une lecture montre le thermostat de nouveau en
+  marche dans les 90 s, l'arrêt est réécrit ;
+- comme toute commande, l'arrêt est refusé si le certificat a changé ou si un
+  autre thermostat répond à l'adresse. **Renommer le thermostat sur son écran
+  suffit** à bloquer les commandes, arrêt compris, jusqu'à deux clics sur
+  **Accepter le changement**.
 
 Le mode est un mode de thermostat, jamais un interrupteur : un « éteins tout »
 d'un assistant vocal ou d'une scène ne l'atteint pas.
@@ -86,14 +102,21 @@ sont espacés (1, 2, 5, puis 10 minutes). S'il répond « occupé » (HTTP 429 o
 5xx), toutes les lectures font une pause (1 minute à 6 heures, gardée après
 un redémarrage).
 
-Un nom d'utilisateur ou un mot de passe refusé par le thermostat arrête les
+En HTTPS, un 401 sur un nonce repris d'une requête précédente reçoit une
+réponse au nouveau défi ; seule une réponse refusée à un défi frais compte
+comme des identifiants refusés. Des identifiants refusés arrêtent les
 lectures : pas de nouvel essai automatique. Changez-les, ou cliquez sur
-**Tester la connexion** (un essai, au plus une fois par intervalle).
+**Tester la connexion** (un essai, au plus une fois par intervalle). Un nom
+d'utilisateur contenant un guillemet ou une barre oblique inverse ne peut pas
+être envoyé : l'état le dit.
 
 Un autre thermostat qui répond à l'adresse (autre modèle, ou autre nom) est
 signalé dans l'état : ses valeurs ne sont pas affichées et les commandes sont
 refusées. Si c'est le même (renommé), cliquez deux fois sur **Accepter le
-changement**.
+changement**. C'est le nom qui distingue deux thermostats du même modèle :
+**donnez à vos thermostats des noms distincts**. Tant que le nom du
+thermostat n'a pas été lu une fois, les commandes autres que l'arrêt sont
+refusées.
 
 ## Limites
 
@@ -101,11 +124,15 @@ changement**.
 - Le mode absence, le programme, les consignes d'humidité et les durées de
   fonctionnement ne sont pas encore affichés.
 - Pas de découverte sur le réseau : saisissez l'adresse.
+- Une lecture et un arrêt peuvent ouvrir deux connexions en même temps.
 - Jamais testé avec un vrai appareil.
 
 ## Vie privée
 
 Tout reste sur votre réseau. `/data` garde l'heure de la dernière lecture,
 l'empreinte du certificat, le modèle et le nom du thermostat, la fin d'une
-pause, et des empreintes salées d'un mot de passe ou d'un code PIN refusé
-(jamais des bons, jamais les valeurs elles-mêmes).
+pause, une empreinte salée d'un nom d'utilisateur et d'un mot de passe
+refusés par le thermostat (effacée au premier succès), et un simple marqueur
+quand un code PIN a été refusé (pas d'empreinte du code : un code de
+4 caractères numériques se retrouverait trop facilement). Jamais le mot de passe, le nom
+d'utilisateur ni le code PIN eux-mêmes.

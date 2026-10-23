@@ -47,8 +47,10 @@ change** twice (the first click shows what will be accepted, the second one
 within 60 s accepts exactly that).
 
 If the thermostat's screen is locked by a **PIN**, enter it: it is sent with
-each command. A PIN refused by the thermostat is never sent again until you
-change it.
+each command (in the body of the request, never in the address). Without
+HTTPS, the PIN travels **in clear** on your local network. A PIN refused by
+the thermostat is no longer sent for the start, setpoint and fan commands
+until you change it (a stop still tries it).
 
 ## Commands
 
@@ -62,14 +64,26 @@ mode, the fan and the setpoints. Then:
   limits of the thermostat; in auto mode the cooling setpoint must stay at
   least the thermostat's deadband above the heating one; the other setpoint
   is written back exactly as read;
+- a setpoint or mode command is refused while a previous setpoint command is
+  not confirmed yet (the API needs both setpoints: the old value would be
+  written back over it); try again a few seconds later;
 - a command is written within 3.5 s of the click, or refused without being
   sent; it is confirmed only when the thermostat shows the value asked,
   otherwise Gladys says "sent, without confirmation" and reads again 5 s
   later;
-- **turning the thermostat off** (mode off) is never refused because
-  another command runs, because of a pause or a refusal kept in memory: it
-  cancels a command not yet written, and is written even when the thermostat
-  already shows off. Another start command waits until it is done.
+- **turning the thermostat off** (mode off) also needs **Allow the commands**:
+  read only means read only (turning the heating off is not harmless in
+  winter). Once allowed, it is never refused because another command runs,
+  because of a pause or a refusal kept in memory: it cancels a command not
+  yet written, writes back the setpoint a not yet confirmed command asked,
+  and is written even when the thermostat already shows off. Another start
+  command waits until it is done. After a start that was never confirmed,
+  the integration watches: if a read shows the thermostat on again within
+  90 s, the stop is written again;
+- like every command, the stop is refused when the certificate changed or
+  when another thermostat answers at the address. **Renaming the thermostat
+  on its screen is enough** to block the commands, the stop included, until
+  you click **Accept the change** twice.
 
 The mode is a thermostat mode, never a switch: a "turn everything off" of a
 voice assistant or a scene does not reach it.
@@ -83,13 +97,19 @@ does not answer, the next tries are spaced (1, 2, 5, then 10 minutes). When
 it answers "busy" (HTTP 429 or 5xx), every read pauses (1 minute to 6 hours,
 kept across restarts).
 
-A user name or password refused by the thermostat stops the reads: no
-automatic retry. Change them, or click **Test the connection** (one try, at
-most once per interval).
+With HTTPS, a 401 on a nonce reused from an earlier request is answered once
+with the new challenge; only a refused answer to a fresh challenge counts as
+refused credentials. Refused credentials stop the reads: no automatic retry.
+Change them, or click **Test the connection** (one try, at most once per
+interval). A user name holding a quote or a backslash cannot be sent: the
+status says so.
 
 Another thermostat answering at the address (another model, or another name)
 is shown in the status: its values are not shown and commands are refused.
-If it is the same one (renamed), click **Accept the change** twice.
+If it is the same one (renamed), click **Accept the change** twice. The name
+is what tells two thermostats of the same model apart: **give your
+thermostats distinct names**. Until the name of the thermostat has been read
+once, the commands other than the stop are refused.
 
 ## Limits
 
@@ -97,11 +117,14 @@ If it is the same one (renamed), click **Accept the change** twice.
 - The away mode, the schedule, the humidity setpoints and the runtimes are not
   shown yet.
 - No discovery on the network: enter the address.
+- A read and a stop may open two connections at the same time.
 - Never tested with a real device.
 
 ## Privacy
 
 Everything stays on your network. `/data` keeps the time of the last read,
 the certificate fingerprint, the model and name of the thermostat, the end of
-a pause, and salted fingerprints of a refused password or PIN (never of the
-good ones, never the values themselves).
+a pause, a salted fingerprint of a user name and password the thermostat
+refused (cleared at the first success), and a simple marker when a PIN was
+refused (no fingerprint of the PIN: a 4-digit PIN would be easy to find back
+from one). Never the password, the user name or the PIN themselves.

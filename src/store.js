@@ -14,13 +14,16 @@
 //                          password leaves);
 //       refusedCertificate the last other certificate met, for "Accept the
 //                          change";
-//       identity           the model, type and name read the first time (a
+//       identity           the model, type and name read the first time (the
+//                          name completed at the first read showing it; a
 //                          thermostat swapped at the address is told apart);
 //       refusedIdentity    the last other identity met, for "Accept the change";
 //       refusedCredentials a salted fingerprint of the user name and password
-//                          REFUSED by the thermostat (never of accepted ones;
-//                          cleared at the first success);
-//       refusedPin         a salted fingerprint of a PIN refused (same rule);
+//                          answered 401 to a fresh Digest challenge (cleared at
+//                          the first success);
+//       pinRefused         a simple marker (no fingerprint: a 4-digit PIN is
+//                          too easy to find back from one), cleared when the
+//                          PIN changes or a command with it succeeds;
 //       pausedUntil        the end of a pause after HTTP 429 / 5xx.
 // Never a password, a PIN or a user name in clear.
 // -----------------------------------------------------------------------------
@@ -118,7 +121,7 @@ export const emptyTarget = () => ({
   identity: undefined,
   refusedIdentity: undefined,
   refusedCredentials: undefined,
-  refusedPin: undefined,
+  pinRefused: false,
   pausedUntil: 0,
 });
 
@@ -150,7 +153,7 @@ export function normalizeMemory(raw, now, maxPause) {
         identity: identityOf(own(entry, 'identity')),
         refusedIdentity: identityOf(own(entry, 'refusedIdentity')),
         refusedCredentials: hash('refusedCredentials'),
-        refusedPin: hash('refusedPin'),
+        pinRefused: own(entry, 'pinRefused') === true,
         pausedUntil:
           Number.isFinite(pausedUntil) && pausedUntil > now
             ? Math.min(pausedUntil, now + maxPause)
@@ -175,11 +178,13 @@ export function serializeMemory(memory) {
       'identity',
       'refusedIdentity',
       'refusedCredentials',
-      'refusedPin',
     ]) {
       if (t[field] !== undefined) {
         entry[field] = t[field];
       }
+    }
+    if (t.pinRefused) {
+      entry.pinRefused = true;
     }
     if (t.pausedUntil > 0) {
       entry.pausedUntil = t.pausedUntil;
