@@ -146,3 +146,7 @@
 - Never tested with a real device.
 - No end-to-end test in a container (Docker not installed on the dev PC).
 - The store validator was not run by the development agent.
+
+## Next patch (review minmax-cvc-r1, minors)
+
+- [ ] `test/helpers/coreFeature.js` (or the features test): put back the checks that supported options only have `label`, `sort_order`, `value`, and that `sort_order` is an integer (today only enforced through the core clone, not on GitHub CI).
