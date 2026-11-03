@@ -10,6 +10,22 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Adding a thermostat failed with "HTTP 422 … t_device_feature.min cannot be
+  null": the fan list (`text`/`select`) had no `min` and `max`, which Gladys
+  requires, so Gladys refused the whole device. It now has 0 and 0, like the
+  other text/select integrations, and a test checks every feature of every
+  device the module can build against the Gladys model. Gladys saves a device
+  in one transaction, so nothing of the refused thermostat was kept: update,
+  then add it again from the Discovery tab.
+
+### Changed
+
+- Integration SDK 0.16 (`^0.16.0`). The device sets `should_poll: false` and
+  no `poll_frequency`, so Gladys 5.3 does not poll it. The test script stops a
+  stuck test after 60 s (`node --test --test-timeout=60000`).
+
 ## [0.1.1] - 2026-10-23
 
 ### Added

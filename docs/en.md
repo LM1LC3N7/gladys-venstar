@@ -111,6 +111,14 @@ is what tells two thermostats of the same model apart: **give your
 thermostats distinct names**. Until the name of the thermostat has been read
 once, the commands other than the stop are refused.
 
+## Troubleshooting
+
+- **"HTTP 422 … t_device_feature.min cannot be null"** when adding a
+  thermostat (versions 0.1.1 and earlier): Gladys refused the "Fan" list, and
+  with it the whole thermostat. Update the integration, then add the
+  thermostat again from the **Discovery** tab. Gladys saved nothing of the
+  refused device: there is nothing to delete.
+
 ## Limits
 
 - One thermostat per installation of the integration.

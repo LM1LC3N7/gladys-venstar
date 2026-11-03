@@ -118,6 +118,15 @@ changement**. C'est le nom qui distingue deux thermostats du même modèle :
 thermostat n'a pas été lu une fois, les commandes autres que l'arrêt sont
 refusées.
 
+## Dépannage
+
+- **« HTTP 422 … t_device_feature.min ne peut pas être nul »** en ajoutant un
+  thermostat (versions 0.1.1 et antérieures) : Gladys refusait la liste
+  « Ventilation », et avec elle tout le thermostat. Mettez l'intégration à
+  jour, puis ajoutez de nouveau le thermostat depuis l'onglet **Découverte**.
+  Gladys n'avait rien enregistré de l'appareil refusé : il n'y a rien à
+  supprimer.
+
 ## Limites
 
 - Un seul thermostat par installation de l'intégration.

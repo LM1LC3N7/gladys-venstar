@@ -2,6 +2,15 @@
 
 ## Decisions
 
+- **The fan list carries min 0 and max 0** (2026-11-03): Gladys stores
+  `min`/`max` as not null for every feature, text/select included (HTTP 422
+  and the whole device refused otherwise; the SDK fake Gladys does not check
+  it). 0/0 like toshiba-ac and most text/select integrations.
+  test/devices.test.js checks every feature of every snapshot shape against
+  the core model (test/helpers/coreFeature.js; the core's own lists and
+  normalizeSupportedOptions when its clone is on the machine).
+- **SDK 0.16** (2026-11-03): `should_poll: false` and no `poll_frequency`, so
+  Gladys 5.3 does not poll the device.
 - Version 0.1.0 set by hand in `package.json`, `package-lock.json`, the
   manifest and the `docker_image` tag: the first patch release gives 0.1.1.
   The manifest test checks the form and the agreement, never a fixed value.
